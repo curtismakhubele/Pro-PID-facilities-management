@@ -1,0 +1,8 @@
+{
+  "name": "pid-facilities-management",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Live PID Facilities Management application",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
