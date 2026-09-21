@@ -33,12 +33,12 @@ $sessionSecret = [Convert]::ToBase64String($randomBytes)
 az login | Out-Null
 az account set --subscription $SubscriptionId
 az group create --name $ResourceGroup --location $Location | Out-Null
-az appservice plan create --name $PlanName --resource-group $ResourceGroup --location $Location --sku B1 --is-linux | Out-Null
+az appservice plan create --name $PlanName --resource-group $ResourceGroup --location $Location --sku F1 | Out-Null
 az webapp create --name $AppName --resource-group $ResourceGroup --plan $PlanName --runtime 'NODE|20-lts' | Out-Null
 az webapp config set --name $AppName --resource-group $ResourceGroup --startup-file 'node server.js' | Out-Null
 az webapp config appsettings set --name $AppName --resource-group $ResourceGroup --settings `
   "ADMIN_EMAIL=$AdminEmail" "ADMIN_PASSWORD=$plainPassword" "SESSION_SECRET=$sessionSecret" `
-  'NODE_ENV=production' 'DATA_DIR=/home/pid-facilities-data' 'WEBSITE_RUN_FROM_PACKAGE=1' | Out-Null
+  'NODE_ENV=production' 'DATA_DIR=D:\home\pid-facilities-data' 'WEBSITE_RUN_FROM_PACKAGE=1' | Out-Null
 az webapp update --name $AppName --resource-group $ResourceGroup --https-only true | Out-Null
 az webapp deploy --name $AppName --resource-group $ResourceGroup --src-path $package --type zip | Out-Null
 

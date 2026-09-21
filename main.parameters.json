@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "pid-facilities-management-dev-d1a6" },
+    "location": { "value": "southafricanorth" },
+    "sessionId": { "value": "d1a6f9a5-f01a-476c-a3e7-81a08691fb67" },
+    "deployedBy": { "value": "CURTIS MAKHUBELE" },
+    "createdAt": { "value": "2026-09-16T17:55:12.7910197Z" },
+    "adminEmail": { "value": "66978769@mylife.unisa.ac.za" }
+  }
+}

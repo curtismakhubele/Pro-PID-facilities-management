@@ -17,7 +17,7 @@ if (fs.existsSync(ENV_FILE)) {
    package may be mounted read-only, while /home remains durable storage. */
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, 'data'));
 const DATA_FILE = path.join(DATA_DIR, 'state.json');
-const PORT = Number(process.env.PORT || 4310);
+const PORT = Number(process.env.PORT || 8080);
 const SECRET = process.env.SESSION_SECRET;
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -68,6 +68,11 @@ function userFor(req, state) {
   try { const session=JSON.parse(Buffer.from(payload, 'base64url')); return session.exp>Date.now() ? state.users.find(u=>u.id===session.id) || null : null; } catch { return null; }
 }
 function publicUser(user) { return { id:user.id, name:user.name, email:user.email, role:user.role }; }
+function corsHeaders(req) {
+  const origin = req.headers.origin;
+  const allowed = !origin || origin === 'null' || origin === 'http://localhost:4310' || origin === 'https://pidmms.azurewebsites.net' || origin === 'https://pid-ftf6dmerh7fmfkga.southafricanorth-01.azurewebsites.net';
+  return allowed && origin ? { 'Access-Control-Allow-Origin':origin, 'Access-Control-Allow-Credentials':'true', 'Access-Control-Allow-Headers':'Content-Type, Accept', 'Access-Control-Allow-Methods':'GET, POST, PUT, DELETE, OPTIONS' } : {};
+}
 function respond(res, status, data, headers={}) { res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store', ...headers }); res.end(JSON.stringify(data)); }
 function readJson(req) { return new Promise((resolve, reject) => { let body=''; req.on('data', c=>{ body+=c; if(body.length>2_000_000) req.destroy(); }); req.on('end', ()=>{ try{ resolve(body ? JSON.parse(body) : {}); }catch{ reject(new Error('Invalid JSON')); } }); }); }
 function serveFile(req, res) {
@@ -78,18 +83,45 @@ function serveFile(req, res) {
   res.writeHead(200, { 'Content-Type':mime, 'X-Content-Type-Options':'nosniff' }); fs.createReadStream(file).pipe(res);
 }
 function requireUser(req, res, state) { const user=userFor(req,state); if(!user){ respond(res,401,{error:'Sign in required'}); return null; } return user; }
+function workflowDraft(description, assetName='') {
+  const text = `${description} ${assetName}`.toLowerCase();
+  const critical = /fire|smoke|shock|flood|gas leak|security breach|unsafe|injur|life safety/.test(text);
+  const high = /leak|burst|power|electric|outage|broken|failure|blocked|urgent|down/.test(text);
+  const preventive = /inspect|service|maintain|replace|clean|test|scheduled/.test(text);
+  const priority = critical ? 'critical' : high ? 'high' : preventive ? 'medium' : 'low';
+  const type = preventive && !high ? 'preventive' : 'corrective';
+  const slaHours = critical ? 2 : high ? 8 : priority === 'medium' ? 48 : 120;
+  const due = new Date(Date.now() + slaHours * 60 * 60 * 1000).toISOString().slice(0,10);
+  const nextSteps = critical
+    ? ['Make the area safe and isolate the hazard.', 'Notify the centre manager and safety lead.', 'Capture photos and log the incident before repair.']
+    : high
+      ? ['Inspect the affected equipment and isolate it if needed.', 'Confirm parts, access requirements and responsible technician.', 'Record the repair outcome and test before handover.']
+      : ['Inspect the asset and confirm the root cause.', 'Gather parts and access requirements.', 'Complete the work and record the verification check.'];
+  const title = `${critical ? 'Urgent safety response' : high ? 'Priority maintenance response' : 'Facilities task'}${assetName ? ` - ${assetName}` : ''}`;
+  return { title, type, priority, dueDate:due, summary:`${priority[0].toUpperCase()+priority.slice(1)} ${type} workflow`, nextSteps, slaHours };
+}
 
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost'); const state=load();
-  if (req.method==='GET' && url.pathname==='/api/health') return respond(res,200,{ok:true,authenticated:!!userFor(req,state)});
-  if (req.method==='GET' && url.pathname==='/api/auth/me') { const user=userFor(req,state); return user ? respond(res,200,{user:publicUser(user)}) : respond(res,401,{error:'Not signed in'}); }
+  if (req.method==='OPTIONS' && url.pathname.startsWith('/api/')) { res.writeHead(204, corsHeaders(req)); return res.end(); }
+  const apiHeaders = corsHeaders(req);
+  for (const [name, value] of Object.entries(apiHeaders)) res.setHeader(name, value);
+  if (req.method==='GET' && url.pathname==='/api/health') return respond(res,200,{ok:true,authenticated:!!userFor(req,state)},apiHeaders);
+  if (req.method==='GET' && url.pathname==='/api/auth/me') { const user=userFor(req,state); return user ? respond(res,200,{user:publicUser(user)},apiHeaders) : respond(res,401,{error:'Not signed in'},apiHeaders); }
   if (req.method==='POST' && url.pathname==='/api/auth/login') {
     const {email='',password=''}=await readJson(req); const user=state.users.find(u=>u.email===String(email).trim().toLowerCase());
-    if(!user || !passwordMatches(String(password),user)) return respond(res,401,{error:'Invalid credentials'});
+    if(!user || !passwordMatches(String(password),user)) return respond(res,401,{error:'Invalid credentials'},apiHeaders);
     const secure=process.env.NODE_ENV==='production' ? '; Secure' : '';
-    return respond(res,200,{user:publicUser(user)},{'Set-Cookie':`pid_session=${tokenFor(user)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${secure}`});
+    const sameSite=process.env.NODE_ENV==='production' ? 'None' : 'Lax';
+    return respond(res,200,{user:publicUser(user)},{...apiHeaders,'Set-Cookie':`pid_session=${tokenFor(user)}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=28800${secure}`});
   }
-  if (req.method==='POST' && url.pathname==='/api/auth/logout') return respond(res,200,{ok:true},{'Set-Cookie':'pid_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'});
+  if (req.method==='POST' && url.pathname==='/api/auth/logout') return respond(res,200,{ok:true},{...apiHeaders,'Set-Cookie':`pid_session=; HttpOnly; SameSite=${process.env.NODE_ENV==='production' ? 'None' : 'Lax'}; Path=/; Max-Age=0`});
+  if (req.method==='POST' && url.pathname==='/api/ai/workflow') {
+    const user=requireUser(req,res,state); if(!user) return;
+    const body=await readJson(req); const description=String(body.description||'').trim(); const assetName=String(body.assetName||'').trim();
+    if(description.length<10 || description.length>2000) return respond(res,400,{error:'Describe the issue in 10 to 2000 characters.'},apiHeaders);
+    return respond(res,200,{workflow:workflowDraft(description,assetName),description,assetName},apiHeaders);
+  }
   if (url.pathname.startsWith('/api/storage')) {
     const user=requireUser(req,res,state); if(!user) return;
     const suffix=url.pathname.slice('/api/storage'.length).replace(/^\//,'');
@@ -111,4 +143,4 @@ if(process.argv[2]==='create-user') {
 }
 const server = http.createServer((req,res)=>handle(req,res).catch(err=>{ console.error(err); respond(res,500,{error:'Server error'}); }));
 server.on('error', err => { console.error(`Could not start server on port ${PORT}: ${err.message}`); process.exitCode = 1; });
-server.listen(PORT,()=>console.log(`PID Facilities is running at http://localhost:${PORT}`));
+server.listen(PORT, '0.0.0.0', ()=>console.log(`PID Facilities is running at http://0.0.0.0:${PORT}`));

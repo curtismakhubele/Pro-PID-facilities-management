@@ -2,19 +2,13 @@
 
 This package replaces the browser-only demo with a server-backed application. It has password authentication, signed HTTP-only sessions, sign-in/sign-out, and one shared persistent datastore. No demo records or fallback browser storage are used.
 
-## Run locally
+## Live application
 
-1. Install Node.js 18 or newer.
-2. Copy `.env.example` to `.env`, then set the first administrator and a long session secret. The supplied package is already configured with the requested initial administrator.
-3. Start the server (double-click `start-app.ps1`, or run the command below):
+Open the deployed application at:
 
-```powershell
-npm start
-```
+https://pid-ftf6dmerh7fmfkga.southafricanorth-01.azurewebsites.net
 
-4. Open `http://localhost:4310`, then sign in with that administrator account.
-
-Do not open `index.html` directly. It needs the application server running to sign in and access the shared data.
+Sign in with the administrator account configured for the Azure App Service. The browser client connects directly to the live application server; no localhost server is required.
 
 The initial account is created only on the first startup. Its password is stored as a salted scrypt hash in `data/state.json`; keep that directory private and back it up securely.
 
